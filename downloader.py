@@ -9,6 +9,20 @@ from config import DOWNLOADS_DIR
 # Oddiy URL formatini tekshirish uchun (http/https bilan boshlanishi kifoya)
 URL_PATTERN = re.compile(r"^https?://\S+$", re.IGNORECASE)
 
+# Cookie fayl yo'li — ikki usuldan biri bilan beriladi:
+# 1) YT_COOKIES_CONTENT — Railway "Variables" bo'limiga faylning butun matnini joylashtirasiz
+#    (eng oson usul, Volume yoki CLI kerak emas)
+# 2) YT_COOKIES_FILE — agar Volume ishlatilsa, faylning to'liq yo'li (masalan /data/cookies.txt)
+COOKIES_FILE = os.environ.get("YT_COOKIES_FILE", "cookies.txt")
+
+_cookies_content = os.environ.get("YT_COOKIES_CONTENT")
+if _cookies_content:
+    # Har safar ishga tushganda faylni qayta yozib qo'yamiz (ephemeral disk uchun mos)
+    COOKIES_FILE = os.path.join(DOWNLOADS_DIR, "cookies.txt")
+    os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+    with open(COOKIES_FILE, "w", encoding="utf-8") as f:
+        f.write(_cookies_content)
+
 
 def is_valid_url(url: str) -> bool:
     """Berilgan matn to'g'ri URL formatida ekanini tekshiradi (platformaga qaramasdan)."""
@@ -26,6 +40,11 @@ def _build_ydl_opts(mode: str, output_template: str) -> dict:
         "no_warnings": True,
         "noplaylist": True,
     }
+
+    # Agar cookie fayli mavjud bo'lsa, uni qo'shamiz (YouTube "sign in to confirm
+    # you're not a bot" xatosini oldini olish uchun)
+    if os.path.exists(COOKIES_FILE):
+        base_opts["cookiefile"] = COOKIES_FILE
 
     if mode == "audio":
         base_opts.update({
