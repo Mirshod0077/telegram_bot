@@ -72,6 +72,15 @@ def _build_ydl_opts(mode: str, output_template: str) -> dict:
     if os.path.exists(COOKIES_FILE):
         base_opts["cookiefile"] = COOKIES_FILE
 
+    # Railway/AWS kabi bulutli serverlarning IP-manzili YouTube tomonidan
+    # "shubhali" deb belgilanadi. Veb-brauzer o'rniga Android ilovasi sifatida
+    # so'rov yuborish bu cheklovni ko'pincha chetlab o'tadi.
+    base_opts["extractor_args"] = {
+        "youtube": {
+            "player_client": ["android", "web"],
+        }
+    }
+
     if mode == "audio":
         base_opts.update({
             "format": "bestaudio/best",
