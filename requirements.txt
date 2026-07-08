@@ -1,0 +1,6 @@
+aiogram==3.29.1
+yt-dlp
+python-dotenv
+requests
+srt
+anthropic
