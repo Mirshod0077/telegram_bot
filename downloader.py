@@ -15,13 +15,39 @@ URL_PATTERN = re.compile(r"^https?://\S+$", re.IGNORECASE)
 # 2) YT_COOKIES_FILE — agar Volume ishlatilsa, faylning to'liq yo'li (masalan /data/cookies.txt)
 COOKIES_FILE = os.environ.get("YT_COOKIES_FILE", "cookies.txt")
 
+
+def _normalize_netscape_cookie_line(line: str) -> str:
+    """
+    Ba'zi veb-formalar (Railway Variables kabi) TAB belgisini probelga
+    aylantirib qo'yishi mumkin. Netscape cookie formati aynan TAB talab qiladi,
+    shuning uchun har bir qatorni 7 ta maydonga bo'lib, qayta TAB bilan qo'shamiz.
+    """
+    stripped = line.rstrip("\n")
+    if not stripped or stripped.startswith("#"):
+        return stripped
+    fields = stripped.split()
+    if len(fields) == 7:
+        return "\t".join(fields)
+    return stripped  # Kutilmagan format — o'zgartirmasdan qoldiramiz
+
+
 _cookies_content = os.environ.get("YT_COOKIES_CONTENT")
 if _cookies_content:
     # Har safar ishga tushganda faylni qayta yozib qo'yamiz (ephemeral disk uchun mos)
     COOKIES_FILE = os.path.join(DOWNLOADS_DIR, "cookies.txt")
     os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+    normalized_lines = [
+        _normalize_netscape_cookie_line(line)
+        for line in _cookies_content.splitlines()
+    ]
     with open(COOKIES_FILE, "w", encoding="utf-8") as f:
-        f.write(_cookies_content)
+        f.write("\n".join(normalized_lines) + "\n")
+
+    # Diagnostika uchun: fayl to'g'ri yaratilganini logda ko'rsatamiz
+    _cookie_line_count = sum(
+        1 for l in normalized_lines if l and not l.startswith("#")
+    )
+    print(f"[cookies] Fayl yaratildi: {COOKIES_FILE}, {_cookie_line_count} ta cookie qatori topildi")
 
 
 def is_valid_url(url: str) -> bool:
