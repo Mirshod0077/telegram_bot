@@ -55,9 +55,10 @@ def is_valid_url(url: str) -> bool:
     return bool(URL_PATTERN.match(url.strip()))
 
 
-def _build_ydl_opts(mode: str, output_template: str) -> dict:
+def _build_ydl_opts(mode: str, output_template: str, max_height: int = None) -> dict:
     """
     mode: 'video' yoki 'audio'
+    max_height: video uchun balandlik chegarasi (None = eng yaxshi sifat, birinchi urinish)
     Video uchun eng yaxshi sifatni, audio uchun mp3 formatini tanlaydi.
     """
     base_opts = {
@@ -91,12 +92,21 @@ def _build_ydl_opts(mode: str, output_template: str) -> dict:
             }],
         })
     else:  # video
-        # 50MB chegarasidan oshib ketmasligi uchun sifatni cheklaymiz
-        base_opts.update({
-            "format": "best[filesize<50M]/best",
-        })
+        if max_height is None:
+            # Birinchi urinish: eng yaxshi sifat, 50MB'dan kichik bo'lishga harakat qiladi
+            base_opts["format"] = "best[filesize<50M]/best"
+        else:
+            # Fayl hali ham katta chiqsa, balandlikni cheklab qayta yuklaymiz
+            base_opts["format"] = f"best[height<={max_height}]/worst"
 
     return base_opts
+
+
+# Telegram Bot API cheklovi 50MB, xavfsizlik uchun ozroq quyi chegara qo'yamiz
+TELEGRAM_MAX_BYTES = 49 * 1024 * 1024
+
+# Video hali ham katta chiqsa, ketma-ket shu balandliklarda qayta yuklashga harakat qilamiz
+FALLBACK_HEIGHTS = [720, 480, 360, 240]
 
 
 def _download_sync(url: str, mode: str) -> str:
@@ -105,20 +115,40 @@ def _download_sync(url: str, mode: str) -> str:
     file_id = str(uuid.uuid4())
     output_template = os.path.join(DOWNLOADS_DIR, f"{file_id}.%(ext)s")
 
-    ydl_opts = _build_ydl_opts(mode, output_template)
+    # Sinash tartibi: avval eng yaxshi sifat, keyin ketma-ket pastroq sifatlar
+    height_attempts = [None] + FALLBACK_HEIGHTS if mode == "video" else [None]
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        filename = ydl.prepare_filename(info)
+    last_filename = None
+    for attempt_height in height_attempts:
+        ydl_opts = _build_ydl_opts(mode, output_template, max_height=attempt_height)
 
-        # Audio holatida kengaytma mp3'ga o'zgaradi (postprocessor tomonidan)
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+
+            # Audio holatida kengaytma mp3'ga o'zgaradi (postprocessor tomonidan)
+            if mode == "audio":
+                base, _ = os.path.splitext(filename)
+                mp3_path = base + ".mp3"
+                if os.path.exists(mp3_path):
+                    filename = mp3_path
+
+        last_filename = filename
+
+        # Audio uchun hajm tekshiruvi kerak emas (mp3 odatda kichik bo'ladi)
         if mode == "audio":
-            base, _ = os.path.splitext(filename)
-            mp3_path = base + ".mp3"
-            if os.path.exists(mp3_path):
-                filename = mp3_path
+            return filename
 
-        return filename
+        file_size = os.path.getsize(filename)
+        if file_size <= TELEGRAM_MAX_BYTES:
+            return filename
+
+        print(f"[downloader] Fayl hali katta ({file_size / 1024 / 1024:.1f}MB), "
+              f"pastroq sifatda qayta urinilmoqda...")
+        os.remove(filename)
+
+    # Barcha urinishlardan keyin ham katta bo'lsa, oxirgi (eng past sifatli) natijani qaytaramiz
+    return last_filename
 
 
 async def download_media(url: str, mode: str) -> str:
